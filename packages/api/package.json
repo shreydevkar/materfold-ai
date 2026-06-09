@@ -13,14 +13,17 @@
     "lint": "echo 'No lint configured for @materfold/api yet'"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.51.0",
     "@materfold/core": "file:../core",
     "@materfold/data": "file:../data",
+    "cors": "^2.8.5",
     "express": "^4.19.2",
     "winston": "^3.17.0",
     "zod": "^3.25.67"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.19",
     "@types/node": "^22.13.4",
     "typescript": "^5.7.3",
     "vitest": "^4.1.8"

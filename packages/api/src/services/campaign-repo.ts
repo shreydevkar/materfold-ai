@@ -1,6 +1,6 @@
 import type { ClientBrief, CampaignIdea, PerformanceAnalysis, UUID } from '@materfold/core';
 import { createCampaignRecord, findCampaignRecord, updateCampaignRecord } from '@materfold/data';
-import type { JsonValue } from '@prisma/client/runtime/library';
+import type { InputJsonValue, JsonValue } from '@prisma/client/runtime/library';
 
 export interface CampaignRecord {
   id: UUID;
@@ -38,7 +38,7 @@ export class InMemoryCampaignRepository implements CampaignRepository {
     void createCampaignRecord({
       organizationId: input.organizationId,
       clientId: input.clientId,
-      brief: input.brief as unknown as JsonValue,
+      brief: input.brief as unknown as InputJsonValue,
       status: input.status,
     }).catch(() => undefined);
     return campaign;
@@ -73,7 +73,7 @@ export class InMemoryCampaignRepository implements CampaignRepository {
     const updated = { ...existing, ...patch };
     this.campaigns.set(id, updated);
     void updateCampaignRecord(id, {
-      brief: updated.brief as unknown as JsonValue,
+      brief: updated.brief as unknown as InputJsonValue,
       status: updated.status,
     }).catch(() => undefined);
     return updated;

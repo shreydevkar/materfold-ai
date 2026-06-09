@@ -45,6 +45,7 @@ a {
 .hero-panel,
 .pipeline-grid,
 .settings-card,
+.runner-card,
 .feature-row {
   display: grid;
   gap: 20px;
@@ -59,6 +60,7 @@ a {
 .hero-copy,
 .status-card,
 .settings-card,
+.runner-card,
 .feature-card,
 .pipeline-card {
   border: 1px solid var(--border);
@@ -80,6 +82,13 @@ a {
   padding: 24px;
   grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
   align-items: center;
+}
+
+.runner-card {
+  margin-top: 20px;
+  padding: 24px;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+  align-items: start;
 }
 
 .eyebrow,
@@ -156,6 +165,73 @@ h1 {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.runner-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.runner-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.runner-form span {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.runner-form input,
+.runner-form textarea,
+.runner-form select {
+  width: 100%;
+  min-height: 52px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 0 16px;
+  font: inherit;
+}
+
+.runner-form textarea {
+  padding: 14px 16px;
+  resize: vertical;
+}
+
+.runner-form__wide {
+  grid-column: 1 / -1;
+}
+
+.ideas-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.idea-card {
+  padding: 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.idea-card h3 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.idea-card p,
+.runner-meta,
+.runner-error {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.runner-error {
+  color: #fdba74;
 }
 
 .settings-status {
@@ -301,8 +377,14 @@ h1 {
 @media (max-width: 920px) {
   .hero-panel,
   .settings-card,
+  .runner-card,
   .feature-row,
   .pipeline-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .runner-form,
+  .ideas-grid {
     grid-template-columns: 1fr;
   }
 

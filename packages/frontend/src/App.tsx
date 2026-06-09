@@ -32,10 +32,30 @@ const milestones = [
 ];
 
 const apiKeyStorageKey = 'materfold:anthropicApiKey';
+const apiBaseUrl = 'http://localhost:3000';
+
+type CampaignIdea = {
+  concept: string;
+  tone: string;
+  visualApproach: string;
+  expectedKpiLift: string;
+};
 
 export default function App() {
   const [apiKey, setApiKey] = useState('');
   const [savedApiKey, setSavedApiKey] = useState('');
+  const [clientId, setClientId] = useState('demo-client');
+  const [platform, setPlatform] = useState('instagram');
+  const [ageMin, setAgeMin] = useState('25');
+  const [ageMax, setAgeMax] = useState('34');
+  const [budget, setBudget] = useState('1500');
+  const [kpis, setKpis] = useState('CTR,ROAS');
+  const [messagingDirection, setMessagingDirection] = useState('Performance creatives for DTC growth');
+  const [campaignId, setCampaignId] = useState('');
+  const [ideas, setIdeas] = useState<CampaignIdea[]>([]);
+  const [runnerStatus, setRunnerStatus] = useState('Ready');
+  const [runnerError, setRunnerError] = useState('');
+  const [isRunning, setIsRunning] = useState(false);
 
   useEffect(() => {
     const storedKey = window.localStorage.getItem(apiKeyStorageKey) ?? '';
@@ -53,6 +73,70 @@ export default function App() {
     window.localStorage.removeItem(apiKeyStorageKey);
     setApiKey('');
     setSavedApiKey('');
+  };
+
+  const runCampaign = async () => {
+    setRunnerError('');
+    setRunnerStatus('Creating campaign...');
+    setIsRunning(true);
+
+    try {
+      if (!savedApiKey.trim()) {
+        throw new Error('Save your Anthropic API key first.');
+      }
+
+      const brief = {
+        clientId,
+        platform,
+        audience: {
+          ageMin: Number(ageMin),
+          ageMax: Number(ageMax),
+        },
+        budget: Number(budget),
+        kpis: kpis.split(',').map((item) => item.trim()).filter(Boolean),
+        messagingDirection,
+      };
+
+      const createdCampaignResponse = await fetch(`${apiBaseUrl}/api/campaigns`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-anthropic-api-key': savedApiKey,
+        },
+        body: JSON.stringify({ clientId, brief }),
+      });
+
+      if (!createdCampaignResponse.ok) {
+        const failure = await createdCampaignResponse.json().catch(() => ({}));
+        throw new Error(failure.error ?? 'Campaign creation failed');
+      }
+
+      const createdCampaign = (await createdCampaignResponse.json()) as { id: string };
+      setCampaignId(createdCampaign.id);
+      setRunnerStatus('Generating ideas...');
+
+      const ideationResponse = await fetch(`${apiBaseUrl}/api/campaigns/${createdCampaign.id}/ideate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-anthropic-api-key': savedApiKey,
+        },
+      });
+
+      if (!ideationResponse.ok) {
+        const failure = await ideationResponse.json().catch(() => ({}));
+        throw new Error(failure.error ?? 'Ideation failed');
+      }
+
+      const ideationResult = (await ideationResponse.json()) as { ideas: CampaignIdea[] };
+      setIdeas(ideationResult.ideas ?? []);
+      setRunnerStatus('Ideas generated successfully.');
+    } catch (error) {
+      setRunnerError(error instanceof Error ? error.message : 'Unexpected error');
+      setRunnerStatus('Ready');
+    } finally {
+      setIsRunning(false);
+    }
   };
 
   const maskedKey = savedApiKey ? `${savedApiKey.slice(0, 6)}${'•'.repeat(Math.max(0, Math.min(10, savedApiKey.length - 6)))}` : 'Not set';
@@ -137,6 +221,78 @@ export default function App() {
           <span>Current value</span>
           <strong>{maskedKey}</strong>
         </div>
+      </section>
+
+      <section className="runner-card" aria-label="Campaign runner">
+        <div>
+          <p className="section-label">Try it now</p>
+          <h2>Run a real campaign brief through the API</h2>
+          <p className="settings-copy">
+            This creates a campaign, sends your brief to the backend, and uses the Anthropic key you saved locally to generate campaign ideas.
+          </p>
+        </div>
+
+        <div className="runner-form">
+          <label>
+            <span>Client ID</span>
+            <input value={clientId} onChange={(event) => setClientId(event.target.value)} />
+          </label>
+          <label>
+            <span>Platform</span>
+            <select value={platform} onChange={(event) => setPlatform(event.target.value)}>
+              <option value="instagram">Instagram</option>
+              <option value="facebook">Facebook</option>
+              <option value="google">Google Ads</option>
+              <option value="tiktok">TikTok</option>
+            </select>
+          </label>
+          <label>
+            <span>Age Min</span>
+            <input type="number" value={ageMin} onChange={(event) => setAgeMin(event.target.value)} />
+          </label>
+          <label>
+            <span>Age Max</span>
+            <input type="number" value={ageMax} onChange={(event) => setAgeMax(event.target.value)} />
+          </label>
+          <label>
+            <span>Budget</span>
+            <input type="number" value={budget} onChange={(event) => setBudget(event.target.value)} />
+          </label>
+          <label className="runner-form__wide">
+            <span>KPIs</span>
+            <input value={kpis} onChange={(event) => setKpis(event.target.value)} />
+          </label>
+          <label className="runner-form__wide">
+            <span>Messaging direction</span>
+            <textarea value={messagingDirection} onChange={(event) => setMessagingDirection(event.target.value)} rows={3} />
+          </label>
+        </div>
+
+        <div className="settings-actions">
+          <button type="button" className="primary-button" onClick={runCampaign} disabled={isRunning}>
+            {isRunning ? 'Running...' : 'Create campaign and generate ideas'}
+          </button>
+        </div>
+
+        <div className="settings-status">
+          <span>Status</span>
+          <strong>{runnerStatus}</strong>
+          {campaignId ? <span className="runner-meta">Campaign ID: {campaignId}</span> : null}
+          {runnerError ? <span className="runner-error">{runnerError}</span> : null}
+        </div>
+
+        {ideas.length > 0 ? (
+          <div className="ideas-grid">
+            {ideas.map((idea) => (
+              <article key={idea.concept} className="idea-card">
+                <h3>{idea.concept}</h3>
+                <p><strong>Tone:</strong> {idea.tone}</p>
+                <p><strong>Visual:</strong> {idea.visualApproach}</p>
+                <p><strong>Expected lift:</strong> {idea.expectedKpiLift}</p>
+              </article>
+            ))}
+          </div>
+        ) : null}
       </section>
 
       <section className="feature-row" id="architecture">

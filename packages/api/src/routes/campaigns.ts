@@ -4,9 +4,20 @@ import { authenticate, type AuthRequest, validateUserAccess, withClientScope } f
 import { contextManager } from '../services/context-manager.js';
 import { tokenMeter } from '../services/token-meter.js';
 import { learningsService } from '../services/learnings-service.js';
+import { createAnthropicClient, resolveAnthropicApiKey } from '../services/anthropic-client.js';
 import { IdeationAgent, ScoringAgent, AnalysisAgent } from '@materfold/core';
 
 export const campaignsRouter = Router();
+
+function getAnthropicClientOrSendError(req: AuthRequest, res: Parameters<RequestHandler>[1]) {
+  const apiKey = resolveAnthropicApiKey(req);
+  if (!apiKey) {
+    res.status(400).json({ error: 'Anthropic API key is required. Set it in the dashboard or send x-anthropic-api-key.' });
+    return null;
+  }
+
+  return createAnthropicClient(apiKey);
+}
 
 const createCampaignHandler: RequestHandler = async (req, res) => {
   try {
@@ -47,8 +58,13 @@ const ideateCampaignHandler: RequestHandler = async (req, res) => {
 
   validateUserAccess(authReq.user, campaign.clientId);
 
+  const client = getAnthropicClientOrSendError(authReq, res);
+  if (!client) {
+    return;
+  }
+
   const agent = new IdeationAgent({
-    client: { messages: { create: async () => ({ content: [{ type: 'text', text: '[]' }] }) } },
+    client,
     tokenMeter,
     contextManager,
     organizationId: authReq.org.id,
@@ -80,8 +96,13 @@ const scoreCampaignHandler: RequestHandler = async (req, res) => {
 
   validateUserAccess(authReq.user, campaign.clientId);
 
+  const client = getAnthropicClientOrSendError(authReq, res);
+  if (!client) {
+    return;
+  }
+
   const agent = new ScoringAgent({
-    client: { messages: { create: async () => ({ content: [{ type: 'text', text: '{}' }] }) } },
+    client,
     tokenMeter,
     contextManager,
     organizationId: authReq.org.id,
@@ -113,8 +134,13 @@ const analyzeCampaignHandler: RequestHandler = async (req, res) => {
 
   validateUserAccess(authReq.user, campaign.clientId);
 
+  const client = getAnthropicClientOrSendError(authReq, res);
+  if (!client) {
+    return;
+  }
+
   const agent = new AnalysisAgent({
-    client: { messages: { create: async () => ({ content: [{ type: 'text', text: '{}' }] }) } },
+    client,
     tokenMeter,
     contextManager,
     organizationId: authReq.org.id,

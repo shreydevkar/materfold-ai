@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import type { JsonValue } from '@prisma/client/runtime/library';
+import type { InputJsonValue, JsonValue } from '@prisma/client/runtime/library';
 import { prisma } from './prisma.js';
 
 export interface StoredCampaignRecord {
@@ -22,7 +22,7 @@ export interface StoredLearningRecord {
 export interface CreateCampaignRecordInput {
   organizationId: string;
   clientId: string;
-  brief: JsonValue;
+  brief: InputJsonValue;
   status: string;
 }
 
@@ -31,7 +31,7 @@ export async function createCampaignRecord(input: CreateCampaignRecordInput) {
     data: {
       organizationId: input.organizationId,
       clientId: input.clientId,
-      brief: input.brief as unknown as JsonValue,
+      brief: input.brief,
       status: input.status,
     },
   }) as Promise<StoredCampaignRecord>;
@@ -43,11 +43,11 @@ export async function findCampaignRecord(id: string): Promise<StoredCampaignReco
   }) as Promise<StoredCampaignRecord | null>;
 }
 
-export async function updateCampaignRecord(id: string, patch: Partial<{ brief: JsonValue; status: string }>) {
+export async function updateCampaignRecord(id: string, patch: Partial<{ brief: InputJsonValue; status: string }>) {
   return prisma.campaign.update({
     where: { id },
     data: {
-      ...(patch.brief ? { brief: patch.brief as unknown as JsonValue } : {}),
+      ...(patch.brief ? { brief: patch.brief } : {}),
       ...(patch.status ? { status: patch.status } : {}),
     },
   }) as Promise<StoredCampaignRecord>;

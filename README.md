@@ -34,7 +34,7 @@ Materfold AI is an agentic marketing workflow system for briefing, ideation, cre
 - Monorepo scaffold created.
 - Core shared types, agents, guardrails, and workflow skeleton added.
 - API routes, token meter, context manager, client scoping, and hybrid Prisma-backed persistence added.
-- Frontend shell with a styled landing page and local Anthropic API key settings panel added.
+- Frontend shell with a styled landing page, local Anthropic API key settings panel, and a real campaign runner added.
 - Prisma schema, migration SQL, data repositories, seed flow, and context schema added.
 - Dockerfile and `.env.example` added.
 - DOCX specs were read directly and compared against TXT conversions.
@@ -106,12 +106,39 @@ npm run build
 npm run dev
 ```
 
+### Start The Frontend In Development
+
+```bash
+npm run dev -w @materfold/frontend
+```
+
+Open the Vite URL it prints, usually `http://localhost:5173`.
+
+## How The Demo Workflow Works
+
+1. Open the frontend in your browser.
+2. Save your Anthropic API key in the settings panel.
+3. Fill in the campaign runner form with a client ID, platform, audience, budget, KPIs, and messaging direction.
+4. Click `Create campaign and generate ideas`.
+5. The frontend sends your key in the `x-anthropic-api-key` header.
+6. The API creates the campaign, loads client context, and calls Anthropic for ideation.
+7. The response ideas are shown in the UI.
+8. You can repeat the flow with different briefs or clients.
+
+## Current Product Shape
+
+- The frontend is now usable as a simple demo console.
+- The backend uses the saved API key to run real Anthropic calls when you trigger ideation.
+- Persistence is hybrid right now: in-memory for fast local usage, with Prisma writes in parallel so the shape is ready for full database mode.
+
 ## Useful Package Scripts
 
 - `npm run build -w @materfold/core`
 - `npm run build -w @materfold/api`
 - `npm run build -w @materfold/frontend`
 - `npm run build -w @materfold/data`
+- `npm run generate -w @materfold/data`
+- `npm run migrate -w @materfold/data`
 
 ## Notes
 
