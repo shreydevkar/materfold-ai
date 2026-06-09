@@ -5,8 +5,18 @@ declare global {
   var __materfoldPrisma: PrismaClient | undefined;
 }
 
-export const prisma = globalThis.__materfoldPrisma ?? new PrismaClient();
+export function getPrismaClient(): PrismaClient {
+  if (!globalThis.__materfoldPrisma) {
+    globalThis.__materfoldPrisma = new PrismaClient();
+  }
 
-if (process.env.NODE_ENV !== 'production') {
-  globalThis.__materfoldPrisma = prisma;
+  return globalThis.__materfoldPrisma;
 }
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, property, receiver) {
+    const client = getPrismaClient();
+    const value = Reflect.get(client, property, receiver);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
