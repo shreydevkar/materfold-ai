@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String         @id @default(uuid())
+  name        String
+  clients     Client[]
+  campaigns   Campaign[]
+  tokenUsage  TokenUsageLog[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model Client {
+  id             String         @id @default(uuid())
+  organizationId String
+  name           String
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  campaigns      Campaign[]
+  tokenUsage     TokenUsageLog[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId])
+}
+
+model Campaign {
+  id             String         @id @default(uuid())
+  organizationId String
+  clientId       String
+  brief          Json
+  status         String
+  organization   Organization   @relation(fields: [organizationId], references: [id])
+  client         Client         @relation(fields: [clientId], references: [id])
+  tokenUsage     TokenUsageLog[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([organizationId])
+  @@index([clientId])
+}
+
+model TokenUsageLog {
+  id             String       @id @default(uuid())
+  organizationId String
+  clientId       String
+  campaignId     String
+  agentType      String
+  modelId        String
+  inputTokens    Int
+  outputTokens   Int
+  estimatedCost  Decimal      @db.Decimal(10, 6)
+  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  client         Client       @relation(fields: [clientId], references: [id])
+  campaign       Campaign     @relation(fields: [campaignId], references: [id])
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([campaignId])
+}
+
+model ClientLearning {
+  id           String   @id @default(uuid())
+  clientId     String
+  insight      String
+  confidence   Int
+  campaignIds  Json
+  lastObserved DateTime
+  conflicted   Boolean  @default(false)
+
+  @@index([clientId])
+  @@index([confidence])
+  @@unique([clientId, insight])
+}

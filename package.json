@@ -1,0 +1,20 @@
+{
+  "name": "materfold-ai",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @materfold/core && npm run build -w @materfold/data && npm run build -w @materfold/api && npm run build -w @materfold/frontend",
+    "dev": "npm run dev -w @materfold/api",
+    "typecheck": "npm run build -w @materfold/core && npm run build -w @materfold/data && npm run typecheck -w @materfold/api && npm run typecheck -w @materfold/frontend && npm run typecheck -w @materfold/data",
+    "test": "npm run test -w @materfold/core && npm run test -w @materfold/api",
+    "migrate": "npm run migrate -w @materfold/data",
+    "seed": "npm run seed -w @materfold/data",
+    "lint": "npm run lint -w @materfold/core && npm run lint -w @materfold/api && npm run lint -w @materfold/frontend && npm run lint -w @materfold/data"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.8"
+  }
+}

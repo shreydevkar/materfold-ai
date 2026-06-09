@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CampaignContext",
+  "type": "object",
+  "required": ["campaignId", "clientId", "createdAt", "version", "campaignBrief", "previousCampaigns"],
+  "properties": {
+    "campaignId": { "type": "string", "format": "uuid" },
+    "clientId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "version": { "type": "integer", "minimum": 1 },
+    "campaignBrief": { "type": "object" },
+    "previousCampaigns": { "type": "array" },
+    "audienceInsights": { "type": ["object", "null"] },
+    "creativePreferences": { "type": ["object", "null"] },
+    "performanceAnalysis": { "type": ["object", "null"] },
+    "lastUpdated": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": true
+}

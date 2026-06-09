@@ -1,0 +1,250 @@
+
+                                 MATERFOLD AI
+                         Advanced Implementation Guide
+        Self-Evolving, Leak-Free, Hallucination-Resistant Architecture
+Overview
+This guide integrates proven patterns from your Shopify ops bot and multi-department agent system into Materfold AI. The goal: a SaaS product that evolves with client data, prevents context leakage across clients, and refuses to hallucinate.
+Three Core Principles
+ Self-Evolving: Each client's agent improves campaign scoring over time without retraining. Learnings are stored, ranked by recency & confidence, then progressively built into prompts.
+ Leak-Free: Multi-tier access controls (org > department > client) enforced at database, context assembly, and Claude API call levels. Cross-client data is structurally impossible.
+ Hallucination-Resistant: Two-phase execution (plan --> validate --> execute), confidence thresholds, deterministic output validation, and guardrail patterns prevent confident-sounding nonsense.
+1. Self-Evolving Context Without Model Retraining
+Inspired by: Your Shopify bot's incremental sync + your multi-department system's institutional memory.
+Problem
+After 10 campaigns, a client's context file is 50KB+ of raw historical data. If you load all of it into every Claude call, you waste tokens and dilute signal (old learnings matter less than recent ones). If you throw it away, you lose institutional knowledge.
+Solution: Hierarchical Context Stacking
+Store campaign history as append-only logs, but construct Claude prompts via tiered selection:
+ Tier 1 (Last 2 Campaigns): Full data -- impressions, audience breakdown, creative notes, performance deltas
+ Tier 2 (Campaigns 3 - 5): Summarized -- what worked, what didn't, one-line audience insights
+ Tier 3 (Campaigns 6+): Condensed patterns -- audience type, proven CTA styles, platform preferences
+
+Implementation
+export class ContextSelector {
+ async selectRelevantContext(clientId: UUID, campaignCount: number): Promise<ContextBundle> {
+ const allCampaigns = await this.loadAllCampaigns(clientId)
+ const recent2 = allCampaigns.slice(-2) // Full detail
+ const mid3 = allCampaigns.slice(-5, -2).map(c => this.summarize(c)) // 30% detail
+ const older = this.extractPatterns(allCampaigns.slice(0, -5)) // Pattern summary
+ return { recent: recent2, midTerm: mid3, patterns: older }
+ }
+ private extractPatterns(campaigns: Campaign[]): PatternSummary {
+ // Aggregate: top 3 performing audience segments, best CTAs, platform win rates
+ // Filter out single-off anomalies; keep recurring patterns
+ return { topSegments, proveCTAs, platformPrefs }
+ }
+}
+Self-Evolution Via Ranking
+Each campaign's performance becomes training data. Store it in a "learnings" table ranked by confidence:
+export interface ClientLearning {
+ clientId: UUID
+ insight: string // e.g., 'Instagram feed dominates for 25-34F, video >=3s wins'
+ confidence: 0 to 100 // How many campaigns proved this?
+ campaignIds: UUID[] // Source campaigns
+ lastObserved: Date // Recency weight
+ conflicted: boolean // Does newer data contradict this?
+}
+After each campaign post-analysis, run:
+export async function updateLearnings(clientId, performanceAnalysis) {
+ // Claude extracts insights from analysis
+ const newInsights = await claude.messages.create({
+ system: 'Extract 3-5 actionable learnings from campaign performance. Output JSON only.',
+ messages: [{ role: 'user', content: performanceAnalysis }]
+ })
+ // Merge into learnings table; rank by confidence
+ for (const insight of newInsights) {
+ const existing = await db.learnings.findOne({ clientId, insight: insight.text })
+ if (existing) {
+ existing.confidence = Math.min(100, existing.confidence + 10) // Boost confidence
+ existing.lastObserved = new Date()
+ } else {
+ db.learnings.insert({ clientId, insight: insight.text, confidence: 40, ... })
+ }
+ }
+}
+Next ideation: Load only high-confidence (>=50) learnings into the system prompt. The agent uses data-backed insights, not guesses.
+2. Leak-Free Multi-Client Architecture
+Inspired by: Your Discord bot's per-client folder isolation + multi-dept system's role-based scoping.
+Problem
+One careless SELECT query or a stray client context file in the wrong scope leaks Client A's audience data to Client B. Or Claude accidentally references Client A's creative in Client B's feedback.
+Solution: Schema-Level Partitioning + Request Scoping
+Database Layer
+Each organization gets its own PostgreSQL schema:
+CREATE SCHEMA org_{organizationId};
+CREATE TABLE org_{organizationId}.campaigns (...)
+CREATE TABLE org_{organizationId}.token_usage_logs (...)
+
+Within each schema, add client_id to every table. Enforce RLS (Row-Level Security):
+ALTER TABLE org_{org}.campaigns ENABLE ROW LEVEL SECURITY;
+CREATE POLICY client_isolation ON org_{org}.campaigns
+ USING (client_id = current_setting('app.current_client_id')::UUID);
+
+Application Layer
+Every request sets the client scope before touching the database:
+export const withClientScope = (req: AuthRequest, res, next) => {
+ const clientId = req.params.clientId || req.query.clientId
+ // Verify user can access this client
+ if (!req.user.clientIds.includes(clientId)) {
+ return res.status(403).json({ error: 'Access denied' })
+ }
+ // Set session variable for RLS
+ await db.query(`SELECT set_config('app.current_client_id', $1, false)`, [clientId])
+ req.clientScope = { clientId, organizationId: req.org.id }
+ next()
+}
+Context Assembly Layer
+When loading context for Claude, filter by scope before inclusion:
+export async function assembleContextForClaude(scope: ClientScope): Promise<ContextBundle> {
+ const campaigns = await db.query(`
+ SELECT * FROM org_${scope.organizationId}.campaigns
+ WHERE client_id = $1`, [scope.clientId])
+ const contextFiles = await contextManager.loadCampaignContexts(scope.clientId)
+ // Double-check: verify all files belong to scope.clientId before including
+ const filtered = contextFiles.filter(f => f.clientId === scope.clientId)
+ return { campaigns, contexts: filtered }
+}
+3. Hallucination-Resistant Design
+Inspired by: Your Shopify bot's two-phase (plan-then-execute) flow + deterministic validation.
+Problem
+Claude confidently says 'Based on your audience, a carousel ad would boost CTR by 40%.' But: (1) No data backs this for your client, (2) Carousel isn't available on their platform, (3) The recommendation contradicts the last campaign's best performer.
+Solution 1: Two-Phase Workflows (Plan --> Validate --> Execute)
+Agent generates ideas as JSON. We validate structure before asking Claude for details.
+Phase 1: Ideation (JSON output)
+const systemPrompt = `
+ You are a campaign ideation assistant. Generate 5 campaign ideas.
+ Output ONLY valid JSON. No preamble, no explanation.
+ Structure: [{ concept, platform, audience_fit, expected_metric, risk_factors }]
+`
+Phase 2: Validation
+export function validateIdeas(ideas: CampaignIdea[], scope: ClientScope): ValidationResult {
+ const errors: string[] = []
+ for (const idea of ideas) {
+ // Check 1: Platform is valid & available for this client
+ if (!['facebook','instagram','google','tiktok'].includes(idea.platform)) {
+ errors.push(`Invalid platform: ${idea.platform}`)
+ }
+ // Check 2: Audience matches client's historical targets
+ const prevAudiences = await getPreviousAudiences(scope.clientId)
+ const isNovel = !prevAudiences.some(a => a.matches(idea.audience))
+ if (isNovel) idea.confidence = 'untested'
+ // Check 3: Risk factors are realistic
+ if (!idea.risk_factors || idea.risk_factors.length === 0) {
+ errors.push(`Idea lacks risk assessment: ${idea.concept}`)
+ }
+ }
+ return { valid: errors.length === 0, errors, ideas }
+}
+If validation fails, do NOT ask Claude to fix it. Return errors to the user/frontend for human review.
+Solution 2: Confidence Thresholds & Retries
+Scoring agent must provide confidence in every score. If it's below threshold, retry with different prompting.
+export async function scoreWithConfidence(
+ creative: CreativeAsset,
+ context: ContextBundle,
+ minConfidence = 0.7 // 70% confidence minimum
+ ): Promise<Score> {
+ let attempt = 0
+ while (attempt < 3) {
+ const response = await claude.messages.create({
+ system: attempt === 0 ? basePrompt : moreStructuredPrompt,
+ messages: [...]
+ })
+ const score = parseScore(response)
+ if (score.confidence >= minConfidence) return score
+ attempt++
+ }
+ // If still under threshold, return low-confidence score + flag for manual review
+ return { ...lastScore, needsManualReview: true }
+}
+Solution 3: Deterministic Output Filtering
+Before returning any Claude output to the user, scan it for hallucinations:
+export function filterHallucinations(response: string, scope: ClientScope): FilterResult {
+ const knownPlatforms = ['facebook','instagram','google','tiktok']
+ const unknownPlatforms = response.match(/(?:on|for)\s+(\w+)\s+platform/gi)
+ for (const match of unknownPlatforms || []) {
+ const platform = match.split(' ')[1]
+ if (!knownPlatforms.includes(platform)) {
+ return { filtered: false, error: `Hallucinated platform: ${platform}` }
+ }
+ }
+ // Check for statistical claims without source
+ const percentageClaims = response.match(/(\d+)%/g) || []
+ const eitherHasSource = response.includes('research') || response.includes('study')
+ if (percentageClaims.length > 3 && !eitherHasSource) {
+ return { filtered: false, error: 'Claims lack sources' }
+ }
+ return { filtered: true, response }
+}
+4. Incremental Context Sync (Prevent Memory Bloat)
+Inspired by: Your Shopify bot's incremental sync pattern.
+Problem
+Loading all 50+ campaigns into context every time wastes tokens. Syncing only recent campaigns loses historical patterns.
+Solution
+Store a "sync cursor" (timestamp) for each client. Only load campaigns since last sync + a rolling window of 2 recent ones.
+export interface SyncCursor {
+ clientId: UUID
+ lastSyncAt: Date
+ lastSyncedCampaignCount: number
+}
+export async function syncClientContext(clientId: UUID): Promise<SyncedContext> {
+ const cursor = await db.getSyncCursor(clientId)
+ const newCampaigns = await db.getCampaigns({
+ clientId,
+ createdAfter: cursor.lastSyncAt
+ })
+ const recent2 = await db.getCampaigns({
+ clientId,
+ limit: 2,
+ orderBy: 'createdAt DESC'
+ })
+ const learnings = await db.getLearnings(clientId, { minConfidence: 50 })
+ await db.updateSyncCursor(clientId, { lastSyncAt: new Date() })
+ return { newCampaigns, recent2, learnings }
+}
+5. Putting It All Together: The Full Agent Lifecycle
+Ideation Flow
+ Request arrives with client scope + brief
+ Middleware enforces client access (scope validation)
+ ContextSelector loads hierarchical context: recent2 (full) + mid3 (summary) + patterns (condensed)
+ ContextSelector queries high-confidence learnings (>=50) from this client
+ IdeationAgent calls Claude with: system prompt + brief + context + learnings
+ Claude returns JSON array of 5 ideas
+ validateIdeas() checks: valid platforms, realistic audiences, proper risk factors
+ If validation fails: return errors, no Claude retry
+ recordTokenUsage() logs: input_tokens, output_tokens, cost
+ initializeCampaignContext() creates versioned context file with brief + ideas
+ Return ideas to user
+
+Post-Campaign Flow
+ Campaign ends; fetch live metrics from ad platform APIs
+ AnalysisAgent calls Claude to extract insights from performance data
+ updateLearnings() ingests insights: creates new records or boosts confidence on existing ones
+ appendPerformanceAnalysis() writes results to campaign context file
+ Next ideation for this client: loads richer learnings + patterns
+Implementation Checklist
+Phase 1: Data Model & Isolation (Weeks 1 - 2)
+ Create org-scoped PostgreSQL schemas
+ Add client_id + RLS policies to all tables
+ Create client_learnings & sync_cursors tables
+ Implement withClientScope middleware
+
+Phase 2: Context Management (Weeks 3 - 4)
+ Implement ContextSelector with hierarchical loading
+ Implement SyncManager for incremental sync
+ Implement LearningsManager with confidence ranking
+
+Phase 3: Agents & Validation (Weeks 5 - 6)
+ Implement IdeationAgent with two-phase flow
+ Implement validateIdeas() with platform, audience, risk checks
+ Implement ScoringAgent with confidence thresholds
+ Implement filterHallucinations() output validation
+
+Phase 4: Testing & Monitoring (Weeks 7 - 8)
+ Unit tests: Context isolation, validation logic, learning ranking
+ Integration tests: End-to-end flows with mock Claude responses
+ Add monitoring: Context size, token usage, validation failure rate
+
+Key Principles (Always Remember)
+ Self-Evolution: Learnings table + confidence ranking = agency improves without retraining
+ Leak-Free: Schema + RLS + scope validation = zero cross-client data leakage
+ Hallucination-Resistant: Validation + confidence thresholds + output filtering = confident truths only
+ Never pass raw unvalidated Claude output to user without filtering
+ Incremental sync + hierarchical context loading = efficient token use at scale

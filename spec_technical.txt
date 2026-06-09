@@ -1,0 +1,339 @@
+
+                                 MATERFOLD AI
+                Technical Specification & Project Breakdown
+                 Marketing Agency Workflow Optimization System
+                                  Version 1.0
+                                   June 2026
+Table of Contents
+ Executive Overview
+ System Architecture
+ Project Directory Structure
+ Technology Stack
+ Core Module Specifications
+ Guardrails & Security
+ Algorithm Design
+ Token Management & Usage Tracking
+ Campaign Context Management
+ Integration Points
+ Deployment & DevOps
+1. Executive Overview
+Project Scope
+Materfold AI is an end-to-end agentic system designed to optimize marketing agency workflows. The system orchestrates the entire campaign lifecycle from client briefing through post-campaign analysis, leveraging AI agents as the primary execution engine while maintaining human oversight at critical decision points.
+Core Value Proposition
+ Reduces campaign conception-to-launch time from days to hours
+ Provides objective, data-driven ad performance scoring
+ Builds institutional memory of client preferences and campaign patterns
+ Enables seamless integration with existing ad platforms (Facebook, Instagram, Google Ads, TikTok)
+ Supports multi-client operations with role-based context isolation
+
+Workflow Overview
+The system follows a five-stage pipeline:
+ Input Phase: Client collects social IPs, brand briefs, and campaign objectives via structured form
+ Ideation Phase: AI generates 5-10 campaign concepts with iterative refinement by creative team
+ Production Phase: Cinematic team executes shoots based on approved concepts
+ Evaluation Phase: AI scores campaign performance with detailed feedback
+ Distribution & Analysis: Published to platforms and monitored with post-campaign insights
+2. System Architecture
+High-Level Architecture
+Materfold AI is organized into five architectural layers:
+LayerResponsibilityKey ComponentsFrontendUser interfaces for briefing, ideation review, and analyticsReact SPA, client brief form, creative review dashboardAPI GatewayREST API orchestrating agent workflows, campaign management, token trackingExpress.js, request validation, auth, rate limitingAgent LayerMulti-turn agentic workflows, Claude API orchestration, tool integrationClaude SDK, workflow state machine, prompt registryData LayerPersistence, campaign context, client data, token usage logsPostgreSQL, file-based context store, audit logs
+Three-Tier Context Model
+All campaign and client data is organized into three isolation levels:
+Tier 1: System-Wide Knowledge
+ Marketing best practices, industry benchmarks, platform guidelines
+ Available to all agents, never modified by campaigns
+ Updated quarterly by operations team
+
+Tier 2: Agency/Department-Level Knowledge
+ Agency brand guidelines, vendor lists, team structure, historical performance by client segment
+ Scoped to department; viewable by all team members in that department
+ Examples: social media account credentials, in-house asset libraries, pricing models
+
+Tier 3: Campaign/Client-Specific Context
+ Individual client briefs, previous campaign analysis, audience insights, creative preferences
+ Updated after each campaign cycle; forms the institutional memory
+ Stored as JSON files versioned by campaign ID and date
+3. Project Directory Structure
+Recommended Node.js + TypeScript monorepo structure:
+materfold-ai/
+ packages/
+ core/
+ src/
+ agents/ (Agentic workflow orchestration)
+ workflows/ (Campaign, ideation, scoring, analysis workflows)
+ types/ (TypeScript interfaces for campaigns, clients, etc.)
+ utils/ (Prompt builders, context assemblers, guardrail validators)
+ api/
+ src/
+ routes/ (Campaign CRUD, workflow endpoints, token tracking, context files)
+ middleware/ (Auth, rate limiting, audit logging)
+ services/ (Database service, token meter, context manager)
+ frontend/
+ src/
+ components/ (Form inputs, dashboard, review panels)
+ pages/ (Brief creation, ideation review, analytics)
+ services/ (API client, state management)
+ data/
+ migrations/ (Database schema)
+ seeds/ (Initial data: best practices, benchmarks)
+ context-store/ (Campaign context file management)
+ client/ (Directory: client-id/context-files/)
+ schemas/ (JSON schema validators for context files)
+
+Critical Directories & Files
+PathPurposeOwner / Dependenciespackages/core/agents/Agentic workflow engine (ideation, scoring, analysis)Claude SDK, anthropic API, prompt registrypackages/core/workflows/State machines orchestrating multi-step processesxstate, agents, context managerapi/services/token-meter.tsTracks Claude API token usage per campaign/clientDatabase, API response parsingapi/services/context-manager.tsVersioned campaign context file persistenceFile system, JSON schema validationcontext-store/client-id/Client-specific context files & version historyAppend-only logs, JSON snapshots4. Technology Stack
+Backend
+ Node.js 18+ with TypeScript
+ Express.js for REST API
+ Anthropic SDK (for Claude API integration)
+ xstate for workflow state machines
+ Zod for runtime type validation
+ PostgreSQL 14+ for relational data
+ Prisma ORM for database abstraction
+ Winston for structured logging
+
+Frontend
+ React 18+ with TypeScript
+ Vite for development & build
+ TanStack Query (React Query) for server state
+ Zustand for client state
+ Tailwind CSS + Shadcn/ui for UI components
+
+External Integrations
+ Meta Graph API (Facebook, Instagram campaigns)
+ Google Ads API
+ TikTok Business API
+ Stripe for billing (future)
+5. Core Module Specifications
+5.1 Ideation Agent
+Responsibility
+Generates 5 - 10 initial campaign concepts based on client brief, target audience, and historical performance data.
+Workflow
+ Accepts structured client brief (platform, audience, budget, KPIs, brand guidelines)
+ Loads Tier 1 (system) and Tier 2 (agency) context
+ Loads Tier 3 (campaign/client) context from versioned context files
+ Calls Claude with structured prompt including brief + context
+ Parses response into structured campaign ideas (JSON)
+ Returns ideas to user for manual review and refinement
+
+Input / Output
+FieldType / FormatNotesINPUTClient BriefJSON (structured form output)Platform, budget, audience, KPIsClient Context IDUUIDReferences latest client context fileOUTPUTCampaign IdeasArray[{concept, tone, visual_approach, expected_kpi_lift}]5 - 10 ideas, each ~300 wordsToken Usage{ input_tokens, output_tokens, cost }Logged to token meter
+5.2 Scoring Agent
+Responsibility
+Evaluates final campaign creative (video/image + copy) against success criteria to produce normalized scores and diagnostic feedback.
+Scoring Dimensions
+ Brand Alignment (0 - 100): How well does creative match brand guidelines and voice?
+ Audience Resonance (0 - 100): Does it match target audience psychographics and preferences?
+ Hook Strength (0 - 100): First 3 seconds capture and context relevance
+ CTA Clarity (0 - 100): Is the call-to-action clear, compelling, and platform-native?
+ Estimated CTR Potential (0 - 100): Based on similar historical campaigns
+ Composite Score (weighted average of above)
+
+Algorithm Details
+See Section 7 (Algorithm Design) for detailed scoring methodology.
+5.3 Post-Campaign Analysis Agent
+Responsibility
+Fetches live performance data from ad platforms, synthesizes insights, and updates client context file with learnings.
+Workflow
+ Polls ad platform APIs (Meta, Google, TikTok) for campaign performance
+ Extracts metrics: impressions, clicks, conversions, spend, ROAS, audience demographics
+ Calls Claude with performance data + historical context to identify patterns
+ Generates insight summary: what worked, what didn't, recommendations for next cycle
+ Appends insights and performance delta to client context file
+6. Guardrails & Security
+Data Isolation
+Network Level
+ Client data stored in separate PostgreSQL schemas per client
+ Campaign context files stored in encrypted directories per client-id
+ Row-level security (RLS) policies on all tables
+
+Application Level
+ Every API request validated against user role and org hierarchy
+ JWT tokens include scoped client_ids; requests filtered by token scope
+ Rate limiting per user and per API key
+
+Context Level
+ Claude API calls include only context matching user's clearance
+ System prompts enforced to prevent cross-client context leakage
+ Prompt injection detection via static analysis of user inputs
+
+Output Level
+ All Claude responses scanned for references to unauthorized data
+ Responses filtered before delivery to client
+
+API Key & Token Management
+ All API keys (Anthropic, Meta, Google, TikTok) stored encrypted in PostgreSQL
+ Keys never exposed in logs or frontend
+ Separate Anthropic API key per organization for cost tracking and quota management
+ Token usage logged before and after each Claude API call
+
+Audit & Compliance
+ Full audit trail: who accessed what data, when, and what Claude generated
+ Campaign context files are append-only logs with ISO timestamps
+ Monthly compliance reports available to admins
+7. Algorithm Design
+7.1 Campaign Scoring Algorithm
+Methodology
+The scoring algorithm combines Claude-generated dimensional scores with historical pattern matching to produce a composite likelihood of campaign success.
+Phase 1: Dimensional Scoring (Claude-Powered)
+Claude evaluates each creative asset against five dimensions:
+ Brand Alignment: Prompt Claude with brand guidelines + creative asset; return 0 - 100
+ Audience Resonance: Match creative tone/visuals against target audience profile; 0 - 100
+ Hook Strength: Evaluate first 3 seconds of video or focal point of image; 0 - 100
+ CTA Clarity: Assess call-to-action prominence, language clarity, platform fit; 0 - 100
+ Historical Pattern Match: Query client's past campaigns with similar audience/budget; score similarity 0 - 100
+
+Phase 2: Weighting & Composite Score
+Composite Score = (0.20 x Brand) + (0.25 x Audience) + (0.15 x Hook) + (0.15 x CTA) + (0.25 x Historical)
+ Weights configurable per client segment (e.g., D2C vs. B2B)
+ Historical match heavily weighted because it's data-grounded, not subjective
+
+Phase 3: Diagnostic Output
+For each dimension, Claude returns:
+ Score (0 - 100)
+ Justification (2 - 3 sentences explaining the score)
+ Recommendations for improvement
+
+7.2 Post-Campaign Analysis Algorithm
+Success Metrics Extraction
+After campaign runs, extract platform-specific metrics:
+ Meta (Facebook/Instagram): Impressions, clicks, conversions, CPC, ROAS, audience breakdown
+ Google Ads: Impressions, conversions, conversion rate, CPA, ROAS
+ TikTok: Views, clicks, click-through rate, cost per click
+
+Comparative Analysis
+Compare campaign results against:
+ Client's historical average (same platform, similar audience)
+ Scoring Agent's predicted scores (did high-scoring ads outperform in practice?)
+ Agency benchmarks (industry data for similar campaigns)
+
+Insight Generation
+Claude synthesizes performance data into:
+ Delta Analysis: How did this campaign perform vs. baseline?
+ Pattern Recognition: What audience segments responded best?
+ Predictive Recommendations: What should change in next campaign?
+
+Feedback Loop: Updating Context
+ Append performance results to client context file
+ Tag results with audience segment, platform, and creative type
+ Next ideation cycle loads enriched context, improving recommendation quality
+8. Token Management & Usage Tracking
+8.1 Token Meter Service
+Architecture
+Create a dedicated TypeScript service (api/services/token-meter.ts) that:
+ Wraps all Claude API calls
+ Extracts usage metadata from API responses
+ Logs tokens per campaign, client, and organization
+ Calculates estimated costs based on current Anthropic pricing
+
+Implementation
+Database Schema (PostgreSQL):
+CREATE TABLE token_usage_logs (
+ id UUID PRIMARY KEY,
+ organization_id UUID,
+ client_id UUID,
+ campaign_id UUID,
+ agent_type VARCHAR (ideation, scoring, analysis),
+ model_id VARCHAR (e.g. claude-opus-4-6),
+ input_tokens INT,
+ output_tokens INT,
+ estimated_cost DECIMAL(10,6),
+ created_at TIMESTAMP DEFAULT NOW(),
+ FOREIGN KEY (organization_id) REFERENCES organizations(id),
+ FOREIGN KEY (campaign_id) REFERENCES campaigns(id)
+);
+
+Token Meter Class
+export class TokenMeter {
+ async logUsage(params: { organizationId, clientId, campaignId, agentType, model, inputTokens, outputTokens }) { ... }
+ async getCampaignTokens(campaignId: UUID): Promise<{ total, breakdown by agent }> { ... }
+ async getOrgTokens(organizationId: UUID, startDate?, endDate?): Promise<{ total cost, usage by client }> { ... }
+ async alertIfOverBudget(organizationId: UUID, budgetLimit: number): Promise<boolean> { ... }
+}
+
+8.2 Usage Tracking in API Flows
+Every agent workflow must call TokenMeter.logUsage() after Claude API completion:
+const response = await anthropic.messages.create({...});
+await tokenMeter.logUsage({
+ organizationId: req.org.id,
+ clientId: req.query.clientId,
+ campaignId: campaign.id,
+ agentType: 'ideation',
+ model: response.model,
+ inputTokens: response.usage.input_tokens,
+ outputTokens: response.usage.output_tokens
+});
+9. Campaign Context Management
+9.1 Context File Strategy
+Purpose
+Per-campaign context files build institutional memory that compounds over time. Each client accumulates a rich history of preferences, audience insights, and performance patterns that inform future campaigns.
+File Structure
+Location: context-store/client-{clientId}/campaign-contexts/
+Each context file: {campaignId}-{ISO_date}.json
+JSON Schema (extensible):
+{
+ "campaignId": "uuid",
+ "clientId": "uuid",
+ "createdAt": "ISO8601",
+ "version": 2,
+ "campaignBrief": { platform, audience, budget, kpis, messaging_direction },
+ "previousCampaigns": [
+ { campaignId, platform, performance: { impressions, ctr, roas }, audienceSegments, creative_notes }
+ ],
+ "audienceInsights": { age_range, gender, interests, geographic_concentration },
+ "creativePreferences": { tone, visual_style, proven_ctas, avoid_themes },
+ "performanceAnalysis": { [latest_only] what_worked, what_didnt, recommendations },
+ "lastUpdated": "ISO8601"
+}
+
+9.2 Context Manager Service
+export class ContextManager {
+ async initializeCampaignContext(clientId, campaignId, brief) { create new context file }
+ async appendPerformanceAnalysis(campaignId, insights) { append to existing context }
+ async loadClientContext(clientId, includeHistorical?) { fetch + merge all versions }
+ async validateContextFile(contextData) { validate against schema }
+ async getContextHistory(clientId) { return version timeline }
+}
+9.3 Update Workflow
+ After ideation: ContextManager.initializeCampaignContext() with client brief
+ After scoring: Update creativePreferences based on feedback
+ After campaign ends: ContextManager.appendPerformanceAnalysis() with post-campaign insights
+ Next ideation: ContextManager.loadClientContext() provides enriched history
+10. Integration Points
+10.1 Ad Platform Integrations
+PlatformAPI / Integration PointExpected DataMetaGraph API v18+ (OAuth 2.0)Impressions, clicks, conversions, spend, audience breakdownGoogle AdsGoogle Ads API (service account)Campaign metrics, conversion data, keyword performanceTikTokTikTok Business APIViews, click-through rate, cost per click
+10.2 File Storage Integration
+ Local file system for development (context-store/ directory)
+ S3 / Blob Storage for production (encrypted at rest, versioned)
+ All file writes include checksums for integrity verification
+11. Deployment & DevOps
+11.1 Containerization
+Dockerfile for API service:
+FROM node:18-alpine
+WORKDIR /app
+COPY packages/api ./packages/api
+RUN npm install --workspace=packages/api
+RUN npm run build --workspace=packages/api
+EXPOSE 3000
+CMD ["npm", "run", "start", "--workspace=packages/api"]
+
+11.2 Environment Configuration
+.env requirements:
+ ANTHROPIC_API_KEY (per organization)
+ DATABASE_URL (PostgreSQL connection string)
+ META_APP_ID, META_APP_SECRET
+ GOOGLE_ADS_DEVELOPER_TOKEN
+ TIKTOK_CLIENT_ID, TIKTOK_CLIENT_SECRET
+ CONTEXT_STORE_PATH (or S3 bucket for production)
+ JWT_SECRET
+
+11.3 Database Setup
+Run migrations on deploy:
+npm run migrate --workspace=packages/data
+
+11.4 Monitoring & Observability
+ Structured logging (Winston) to stdout --> aggregated by deployment platform
+ Monitor Claude API latency, token costs, error rates
+ Alert on: budget overages, platform API failures, validation errors
+
+End of Technical Specification

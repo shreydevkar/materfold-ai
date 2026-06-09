@@ -1,0 +1,238 @@
+
+                                 MATERFOLD AI
+                   Implementation Guide & Code Patterns
+                              Developer Reference
+Quick Reference
+ Agent Base Class
+ Workflow State Machine
+ API Route Patterns
+ Token Tracking
+ Context File Operations
+ Guardrail Implementation
+ Testing Strategies
+1. Agent Base Class
+All agents inherit from this base class. Located in packages/core/agents/AgentBase.ts
+Structure
+export abstract class AgentBase {
+ protected client: Anthropic
+ protected tokenMeter: TokenMeter
+ protected contextManager: ContextManager
+ protected logger: Logger
+ protected organizationId: UUID
+ protected clientId: UUID
+ protected campaignId: UUID
+
+ constructor(deps: AgentDependencies)
+ protected abstract getSystemPrompt(): string
+ protected abstract parseResponse(response: Message): unknown
+ protected async loadContext(): Promise<ContextBundle>
+ protected async callClaude(userPrompt: string, context: ContextBundle): Promise<Message>
+ protected async recordTokenUsage(response: Message, agentType: string)
+ protected validateOutput(output: unknown): void
+}
+Example: Ideation Agent
+export class IdeationAgent extends AgentBase {
+ async execute(brief: ClientBrief): Promise<CampaignIdea[]> {
+ const context = await this.loadContext()
+ const systemPrompt = this.getSystemPrompt()
+ const userPrompt = this.buildUserPrompt(brief, context)
+ const response = await this.callClaude(userPrompt, context)
+ await this.recordTokenUsage(response, 'ideation')
+ const ideas = this.parseResponse(response) as CampaignIdea[]
+ this.validateOutput(ideas)
+ return ideas
+ }
+ protected getSystemPrompt(): string { ... }
+ protected parseResponse(response: Message): unknown { ... }
+}
+2. Workflow State Machine
+Use xstate for orchestrating multi-step campaigns. Located in packages/core/workflows/
+Campaign Workflow Definition
+export const campaignMachine = createMachine({
+ id: 'campaign',
+ initial: 'briefing',
+ context: { brief: null, ideas: [], selectedIdea: null, score: 0 },
+ states: {
+ briefing: {
+ on: { BRIEF_SUBMITTED: { target: 'ideation', actions: 'setBrief' } }
+ },
+ ideation: {
+ invoke: { src: 'ideationAgent', onDone: { target: 'ideaReview', actions: 'setIdeas' } },
+ on: { IDEA_SELECTED: { target: 'scoring', actions: 'setSelectedIdea' } }
+ },
+ ideaReview: { type: 'final' }, // User reviews ideas
+ scoring: {
+ invoke: { src: 'scoringAgent', onDone: { target: 'scoreReview', actions: 'setScore' } }
+ },
+ scoreReview: { type: 'final' }, // Publish or iterate
+ }
+ }, }
+3. API Route Patterns
+Campaign Creation Endpoint
+// POST /api/campaigns
+router.post('/campaigns', authenticate, async (req: AuthRequest, res) => {
+ try {
+ const { clientId, brief } = req.body
+ validateUserAccess(req.user, clientId)
+ const campaign = await campaignRepo.create({
+ organizationId: req.org.id,
+ clientId,
+ brief,
+ status: 'ideation_pending'
+ })
+ await contextManager.initializeCampaignContext(clientId, campaign.id, brief)
+ res.status(201).json(campaign)
+ } catch (err) {
+ logger.error('Campaign creation failed', { error: err, userId: req.user.id })
+ res.status(500).json({ error: 'Internal server error' })
+ }
+})
+Ideation Endpoint
+// POST /api/campaigns/:campaignId/ideate
+router.post('/campaigns/:campaignId/ideate', authenticate, async (req, res) => {
+ const campaign = await campaignRepo.findById(req.params.campaignId)
+ validateUserAccess(req.user, campaign.clientId)
+ const agent = new IdeationAgent({ client, tokenMeter, contextManager, ... })
+ const ideas = await agent.execute(campaign.brief)
+ await campaignRepo.update(campaign.id, { ideas, status: 'idea_review' })
+ res.json({ ideas, campaignId: campaign.id })
+})
+4. Token Tracking
+Token Meter Implementation
+export class TokenMeter {
+ constructor(private db: Database) {}
+
+ async logUsage(params: {
+ organizationId: UUID
+ clientId: UUID
+ campaignId: UUID
+ agentType: 'ideation' | 'scoring' | 'analysis'
+ model: string
+ inputTokens: number
+ outputTokens: number
+ }): Promise<void> {
+ const PRICES = { 'claude-opus-4-6': { in: 0.015, out: 0.045 }, ... }
+ const modelPrice = PRICES[model]
+ const estimatedCost = (inputTokens / 1000 * modelPrice.in) + (outputTokens / 1000 * modelPrice.out)
+ await this.db.query(`
+ INSERT INTO token_usage_logs (...) VALUES ($1, $2, ...)
+ `)
+ }
+}
+Usage in Agent
+protected async recordTokenUsage(response: Message, agentType: string) {
+ await this.tokenMeter.logUsage({
+ organizationId: this.organizationId,
+ clientId: this.clientId,
+ campaignId: this.campaignId,
+ agentType,
+ model: response.model,
+ inputTokens: response.usage.input_tokens,
+ outputTokens: response.usage.output_tokens
+ })
+}
+5. Context File Operations
+Context Manager Implementation
+export class ContextManager {
+ constructor(private storePath: string, private validator: SchemaValidator) {}
+
+ async initializeCampaignContext(
+ clientId: UUID,
+ campaignId: UUID,
+ brief: ClientBrief
+ ): Promise<void> {
+ const context: CampaignContext = {
+ campaignId,
+ clientId,
+ createdAt: new Date().toISOString(),
+ version: 1,
+ campaignBrief: brief,
+ previousCampaigns: await this.loadPreviousCampaigns(clientId),
+ }
+ this.validator.validate(context)
+ const filePath = this.getContextFilePath(clientId, campaignId)
+ await fs.promises.writeFile(filePath, JSON.stringify(context, null, 2))
+ }
+
+ async appendPerformanceAnalysis(
+ campaignId: UUID,
+ analysis: PerformanceAnalysis
+ ): Promise<void> {
+ const context = await this.loadCampaignContext(campaignId)
+ context.performanceAnalysis = analysis
+ context.lastUpdated = new Date().toISOString()
+ const filePath = this.getContextFilePath(context.clientId, campaignId)
+ await fs.promises.writeFile(filePath, JSON.stringify(context, null, 2))
+ }
+}
+6. Guardrail Implementation
+Input Validation
+Use Zod for runtime validation of all user inputs:
+const ClientBriefSchema = z.object({
+ clientId: z.string().uuid(),
+ platform: z.enum(['facebook', 'instagram', 'google', 'tiktok']),
+ audience: z.object({
+ ageMin: z.number().min(13).max(100),
+ ageMax: z.number().min(13).max(100),
+ }),
+ budget: z.number().min(100).max(100000), // Prevent extreme values
+ kpis: z.array(z.string()).min(1).max(5)
+})
+Prompt Injection Detection
+export class PromptGuard {
+ static detectInjection(input: string): boolean {
+ const suspiciousPatterns = [
+ /ignore.*previous.*instructions/i,
+ /system.*prompt/i,
+ /you are now/i,
+ ]
+ return suspiciousPatterns.some(pattern => pattern.test(input))
+ }
+}
+Data Isolation Validation
+// Middleware: Ensure user can only access their clients
+export const validateClientAccess = (req: AuthRequest, res, next) => {
+ const clientId = req.params.clientId || req.body.clientId
+ if (!req.user.clientIds.includes(clientId)) {
+ return res.status(403).json({ error: 'Access denied' })
+ }
+ next()
+}
+7. Testing Strategies
+Unit Tests: Agent Execution
+import { describe, it, expect, vi } from 'vitest'
+describe('IdeationAgent', () => {
+ it('should generate 5-10 campaign ideas', async () => {
+ const mockAnthropicResponse = {
+ usage: { input_tokens: 500, output_tokens: 1200 },
+ content: [{ type: 'text', text: JSON.stringify([...ideas]) }]
+ }
+ const mockClient = { messages: { create: vi.fn().resolvedValue(mockAnthropicResponse) } }
+ const agent = new IdeationAgent({ client: mockClient, ... })
+ const ideas = await agent.execute(mockBrief)
+ expect(ideas.length).toBeGreaterThanOrEqual(5)
+ expect(ideas.length).toBeLessThanOrEqual(10)
+ })
+})
+Integration Tests: Full Campaign Flow
+describe('Campaign Flow', () => {
+ it('should orchestrate briefing-->ideation-->scoring flow', async () => {
+ const campaign = await request(app).post('/campaigns').send(mockBrief)
+ expect(campaign.status).toBe(201)
+ const contextFile = await fs.promises.readFile(`context-store/../${campaign.id}.json`)
+ expect(contextFile).toBeDefined()
+ const ideas = await request(app).post(`/campaigns/${campaign.id}/ideate`)
+ expect(ideas.body.ideas.length).toBeGreaterThan(0)
+ })
+})
+Implementation Checklist
+ Set up monorepo with packages/{core, api, frontend, data}
+ Implement AgentBase class with Anthropic SDK integration
+ Create IdeationAgent, ScoringAgent, AnalysisAgent
+ Set up xstate campaign machine
+ Implement TokenMeter with database schema
+ Implement ContextManager with file I/O
+ Add guardrails: validation, prompt injection detection, access control
+ Write unit and integration tests
+ Deploy to staging environment, run E2E tests
+ Deploy to production
